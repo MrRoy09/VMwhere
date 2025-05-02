@@ -15,16 +15,30 @@
 #include <sys/syscall.h>
 #include <stdarg.h>
 
+#define SYS_CUSTOM_mmap 0x20000000
+#define SYS_CUSTOM_mremap 0x20000001
+#define SYS_CUSTOM_munmap 0x20000002
+#define SYS_CUSTOM_mprotect 0x20000003
+
 typedef uint8_t state_t[4][4];
 struct AES_ctx
 {
     uint8_t RoundKey[176];
 };
-int daddy = 0;
-long addr = -1;
-#define SYS_CUSTOM_mmap 0x20000000
-#define SYS_CUSTOM_mremap 0x20000001
-#define SYS_CUSTOM_munmap 0x20000002
+
+void AES_ECB_encrypt(const struct AES_ctx *ctx, uint8_t *buf);
+void *func = (void *)AES_ECB_encrypt;
+size_t page_size;
+void *page;
+static volatile int daddy = -1;
+static long addr = -1;
+long syscall_mprotect(unsigned long addr, unsigned long len, unsigned long prot);
+static void init_glob()
+{
+    page_size = sysconf(_SC_PAGESIZE);
+    page = (void *)((uintptr_t)func & ~(page_size - 1));
+    syscall_mprotect((unsigned long)page, page_size, PROT_READ | PROT_WRITE);
+}
 
 typedef int (*main_fn)(int, char **, char **);
 typedef uint8_t state_t[4][4];
@@ -66,31 +80,40 @@ int __wrap_main(int argc, char **argv, char **envp)
         // Continue to next syscall
         if (ptrace(PTRACE_SYSCALL, child_pid, 0, 0) == -1)
         {
-            perror("ptrace(PTRACE_SYSCALL) after syscall exit");
+            // perror("ptrace(PTRACE_SYSCALL) after syscall exit");
             break;
         }
     }
 
-    printf("Child process monitoring ended\n");
+    // printf("Child process monitoring ended\n");
 }
 
 void tracee()
 {
-    // Tell the kernel we want to be traced
     if (ptrace(PTRACE_TRACEME, 0, 0, 0) == -1)
     {
-        perror("ptrace(PTRACE_TRACEME)");
+        // perror("ptrace(PTRACE_TRACEME)");
         exit(1);
     }
 
-    // Stop and wait for parent to take control
     raise(SIGSTOP);
+}
+
+void modify_args(int argc, char *argv[])
+{
+    // modify argv[1] by xoring
+    if (argc > 1)
+    {
+        int n = strlen(argv[1]);
+        for (int i = 0; i < n; i++)
+        {
+            argv[1][i] ^= 0xFF;
+        }
+    }
 }
 
 int __wrap_main(int argc, char *argv[])
 {
-    printf("In __wrap_main\n");
-
     pid_t pid = fork();
     extern int __real_main(int argc, char *argv[]);
 
@@ -103,12 +126,15 @@ int __wrap_main(int argc, char *argv[])
     {
         daddy = 0;
         tracee();
+        long ret = syscall_custom_mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (ret == -1)
+            modify_args(argc, argv);
+        syscall_custom_mprotect((unsigned long)page, page_size, PROT_READ | PROT_EXEC);
         int result = __real_main(argc, argv);
         return result;
     }
     else
     {
-        // Parent process
         daddy = 1;
         tracer(pid);
         return 0;
@@ -127,12 +153,11 @@ int __wrap___libc_start_main(
     extern int __real___libc_start_main(
         main_fn, int, char **, void (*)(void), void (*)(void), void (*)(void), void *);
 
-    // Only attempt syscall in child process
     if (!daddy)
     {
-        // printf("Attempting custom mmap syscall\n");
         long ret = syscall_custom_mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         addr = ret;
+        init_glob();
     }
 
     // Always proceed with regular startup
@@ -146,10 +171,10 @@ int __wrap_printf(const char *format, ...)
     if (!daddy)
     {
         ret = syscall_custom_mremap(addr, 4096, 4436, 0, 0);
-        if (ret == -1)
-        {
-            perror("custom_mremap syscall");
-        }
+        // if (ret == -1)
+        // {
+        //     perror("custom_mremap syscall");
+        // }
         addr = ret;
     }
     va_start(args, format);
