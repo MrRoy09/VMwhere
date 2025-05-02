@@ -7,17 +7,18 @@ RUN apt-get update && apt-get install -y \
     llvm \
     llvm-dev \
     build-essential \
-    cmake \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY ./src src
 COPY ./passes passes
 COPY ./hooks hooks
+COPY ./test test
+COPY Makefile Makefile
 
-RUN make passes
+RUN make build
 
-CMD ["/bin/bash"]
+ENTRYPOINT ["/bin/out"]
 
-
+FROM scratch AS export
+COPY --from=builder /app/build/out /out
