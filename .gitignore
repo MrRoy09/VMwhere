@@ -1,4 +1,4 @@
 test
-build
-hooks
-passes
+./build
+./hooks
+./passes
