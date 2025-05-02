@@ -1,5 +1,6 @@
+SH	:= bash
 CXX := clang++
-CXXFLAGS := -fPIC -shared
+CXXFLAGS := -fPIC -shared `llvm-config --cxxflags --ldflags --system-libs --libs core passes`
 SRC_DIR := src
 OUT_DIR := passes
 
