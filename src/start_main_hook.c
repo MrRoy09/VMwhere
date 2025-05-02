@@ -12,6 +12,8 @@
 #include <sys/ptrace.h>
 
 typedef int (*main_fn)(int, char **, char **);
+typedef uint8_t state_t[4][4];
+
 
 static int check_debugger()
 {
@@ -26,7 +28,6 @@ static int check_debugger()
 
 int __wrap_main(int argc, char **argv, char **envp)
 {
-
     if (check_debugger())
     {
         if (argc > 1)
