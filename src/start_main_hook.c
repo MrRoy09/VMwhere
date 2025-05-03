@@ -31,13 +31,22 @@ void *func = (void *)AES_ECB_encrypt;
 size_t page_size;
 void *page;
 static volatile int daddy = -1;
-static long addr = -1;
-long syscall_mprotect(unsigned long addr, unsigned long len, unsigned long prot);
-static void init_glob()
+static uint64_t addr = 0;
+static long syscall_mprotect(unsigned long addr, unsigned long len, unsigned long prot);
+
+// Get page size using inline assembly
+static size_t get_page_size(void)
 {
-    page_size = sysconf(_SC_PAGESIZE);
-    page = (void *)((uintptr_t)func & ~(page_size - 1));
-    syscall_mprotect((unsigned long)page, page_size, PROT_READ | PROT_WRITE);
+    long result;
+    register long rax __asm__("rax") = 12; // SYS_getpagesize on x86_64
+
+    __asm__ volatile(
+        "syscall\n"
+        : "=a"(result)
+        : "r"(rax)
+        : "rcx", "r11", "memory");
+
+    return (size_t)result;
 }
 
 typedef int (*main_fn)(int, char **, char **);
@@ -93,7 +102,7 @@ void tracee()
     if (ptrace(PTRACE_TRACEME, 0, 0, 0) == -1)
     {
         // perror("ptrace(PTRACE_TRACEME)");
-        exit(1);
+        return;
     }
 
     raise(SIGSTOP);
@@ -115,11 +124,12 @@ void modify_args(int argc, char *argv[])
 int __wrap_main(int argc, char *argv[])
 {
     pid_t pid = fork();
+    // pid_t pid = 0;
     extern int __real_main(int argc, char *argv[]);
 
     if (pid < 0)
     {
-        perror("fork failed");
+        // perror("fork failed");
         return -1;
     }
     else if (pid == 0)
@@ -127,9 +137,8 @@ int __wrap_main(int argc, char *argv[])
         daddy = 0;
         tracee();
         long ret = syscall_custom_mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (ret == -1)
+        if (ret < 0)
             modify_args(argc, argv);
-        syscall_custom_mprotect((unsigned long)page, page_size, PROT_READ | PROT_EXEC);
         int result = __real_main(argc, argv);
         return result;
     }
@@ -141,27 +150,37 @@ int __wrap_main(int argc, char *argv[])
     }
 }
 
-int __wrap___libc_start_main(
-    main_fn main,
-    int argc,
-    char **ubp_av,
-    void (*init)(void),
-    void (*fini)(void),
-    void (*rtld_fini)(void),
-    void *stack_end)
+int __wrap_printf(const char *format, ...)
 {
-    extern int __real___libc_start_main(
-        main_fn, int, char **, void (*)(void), void (*)(void), void (*)(void), void *);
-
+    va_list args;
+    int64_t ret;
     if (!daddy)
     {
-        long ret = syscall_custom_mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        addr = ret;
-        init_glob();
+        if (addr == 0)
+        {
+            ret = syscall_custom_mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            addr = ret;
+            if (ret > 0)
+            {
+                ret = 0;
+            }
+        }
+        else
+        {
+            ret = syscall_custom_munmap(addr, 4096);
+            addr = 0;
+        }
+        if (ret < 0)
+        {
+            // fprintf(stderr, "Error in mmap: %s\n", strerror(errno));
+            return -1;
+        }
     }
+    va_start(args, format);
+    ret = vprintf(format, args);
+    va_end(args);
 
-    // Always proceed with regular startup
-    return __real___libc_start_main(main, argc, ubp_av, init, fini, rtld_fini, stack_end);
+    return ret;
 }
 
 int __wrap_printf(const char *format, ...)
