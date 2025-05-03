@@ -101,7 +101,7 @@ The source code for this pass can be found in `anti-disassembly.cpp`
 
 For an exact understanding of the implementation, please refer to the source code. Comments have been added to explain how LLVM API is being leveraged to implement the above stated obfuscation
 
-## Effecting of obfuscation on given binary
+## Effect of obfuscation on given binary
 
 Let us examine the effect of implementing each pass on the given AES source code to better understand what each obfuscation pass is doing (individually)
 
