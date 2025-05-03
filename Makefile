@@ -1,7 +1,8 @@
 SH    := bash
 CC    := clang
 CXX   := clang++
-CXXFLAGS := -fPIC -shared
+CFLAGS   := -fPIC -shared
+CXXFLAGS := -fPIC -shared -O2
 
 SRC_DIR   := src
 PASSES_DIR:= passes
@@ -28,7 +29,7 @@ hooks: $(HOOK_OBJS)
 
 $(HOOKS_DIR)/%.o: $(SRC_DIR)/hooks/%.c | passes
 	@mkdir -p $(HOOKS_DIR)
-	$(CC) -c $(addprefix -fpass-plugin=,$(PASS_OBJS)) $< -o $@
+	$(CC) $(CFLAGS) -static -c $(addprefix -fpass-plugin=,$(PASS_OBJS)) $< -o $@
 
 build: hooks
 	@mkdir -p $(BUILD_DIR)
@@ -36,11 +37,12 @@ build: hooks
 	$(CC) -c $(addprefix -fpass-plugin=,$(PASS_OBJS)) $(MAIN_DIR)/main.c -o $(MAIN_DIR)/main.o
 	$(CC) -static $(MAIN_DIR)/main.o $(HOOKS_DIR)/start_main_hook.o $(MAIN_DIR)/string_decrypt.o -Wl,--wrap=__libc_start_main -Wl,--wrap=main -o $(BUILD_DIR)/obfuscated
 	llvm-strip $(BUILD_DIR)/obfuscated
-	$(CC) $(MAIN_DIR)/main.c -o $(BUILD_DIR)/original
+	$(CC) -static $(MAIN_DIR)/main.c -o $(BUILD_DIR)/original
 
 clean:
 	rm -f $(PASSES_DIR)/*.so
 	rm -f $(HOOKS_DIR)/*.o $(HOOKS_DIR)/start_main_hook.o
 	rm -f $(MAIN_DIR)/main.o $(HOOKS_DIR)/start_main_hook.o $(BUILD_DIR)/out
+	rm -f $(BUILD_DIR)/obfuscated $(BUILD_DIR)/original
 
 .PHONY: all passes hooks build clean

@@ -11,8 +11,6 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 COPY ./src src
-COPY ./passes passes
-COPY ./hooks hooks
 COPY ./test test
 COPY Makefile Makefile
 
