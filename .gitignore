@@ -1,1 +1,5 @@
-/test
+test
+./build
+./hooks
+./passes
+./out
