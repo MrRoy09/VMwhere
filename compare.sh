@@ -16,13 +16,13 @@ for ((i=1; i<=NUM_TESTS; i++)); do
         | head -c "$len")
 
   out1=$("$BUILD_DIR/original" "$inp")
-  out2=$("$BUILD_DIR/obfuscated" "$inp")
+  out2=$("$BUILD_DIR/safe_main" "$inp")
 
   if [[ "$out1" != "$out2" ]]; then
     echo -e "${RED}[FAIL] Test Failed${NC}"
     echo -e "${RED}Mismatch on test #$i, input='$inp'${NC}"
     echo -e "${YELLOW}original:   <${out1}>${NC}"
-    echo -e "${YELLOW}obfuscated: <${out2}>${NC}"
+    echo -e "${YELLOW}safe_main: <${out2}>${NC}"
     exit 1
   fi
 

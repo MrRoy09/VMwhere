@@ -56,7 +56,7 @@ for i in $(seq 1 $NUM_TESTS); do
         --warmup 3 \
         --export-json /dev/stdout \
         --runs 3 \
-        "$BUILD_DIR/obfuscated '$inp'" \
+        "$BUILD_DIR/safe_main '$inp'" \
       2>/dev/null | jq '.results[0].mean')
 
   orig_sum=$(echo "$orig_sum + $t1" | bc -l)
@@ -74,5 +74,5 @@ slowdown=$(echo "scale=2; $avg_obf / $avg_orig" | bc -l)
 echo
 echo "=== RESULTS ==="
 echo -e "${BLUE}avg original:   ${avg_orig}s${NC}"
-echo -e "${BLUE}avg obfuscated: ${avg_obf}s${NC}"
+echo -e "${BLUE}avg safe_main: ${avg_obf}s${NC}"
 echo -e "${YELLOW}slowdown factor: ${slowdown}x${NC}"
