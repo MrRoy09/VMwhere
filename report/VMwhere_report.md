@@ -42,7 +42,7 @@ flowchart LR
 
 
 ## Overview of Implemented Obfuscation techniques
-- String Obfuscation: LLVM pass designed to encrypt all strings at compile time using simple XOR arthimetic. The strings are only decrypted at runtime, hence preventing static analysis tools from being able to detect them.
+- String Obfuscation: LLVM pass designed to encrypt all strings at compile time using simple XOR arithmetic. The strings are only decrypted at runtime, hence preventing static analysis tools from being able to detect them.
 
 - Instruction substitution: LLVM pass designed to replace all occurences of simple addition with a boolean expression that evaluates to addition. 
 
@@ -96,7 +96,7 @@ The source code for this can be found in `flatten.cpp`
 
 ### Anti-Disassembly
 
-Special bytes are crafted and inserted into the binary. These bytes exploit a weakness in the recursive traversal algorithm employed by disassemblers to disassemble code. By encoding one x86 instruction within another, we can confuse the disassemblers into disassembling junk. Many variations of such bytes exist. VMwhere engine also randomizes each group of byte slightly. This makes it harder for reverse engineers to patch the anti-disassembly bytes.
+Special bytes are crafted and inserted into the binary. These bytes exploit a weakness in the recursive traversal algorithm employed by disassemblers to disassemble code. By encoding one x86 instruction within another, we can confuse the disassemblers into disassembling junk. Many variations of such bytes exist. VMwhere engine also randomizes each group of bytes slightly. This makes it harder for reverse engineers to patch the anti-disassembly bytes.
 
 Since disassembly becomes impossible, it also becomes impossible to generate pseudo-c code (decompilation). This makes reverse engineering complex functions much more difficult.
 
@@ -163,7 +163,7 @@ Note how these syscalls:
 3. Would fail if called directly in the kernel
 
 ### Parent-Child Process with ptrace Monitoring
-
+group of 
 The `__wrap_main` function sets up a parent-child relationship where:
 
 1. The parent process acts as a "syscall translator" using ptrace
@@ -344,3 +344,7 @@ Normal Run<br>
 Debugged Run
 ![Debugged Run](debugging.png)
 
+## Summary of Changes
+In conclusion, VMwhere engine operates on the IR level at compile time and function wrapping at link time. Hence **no source code modifications** are required whatsoever. 
+
+The obfuscation techniques implemented in VMwhere are both versatile and generic. They are not tailored to any specific source code (like given source code) and can be seamlessly applied—without requiring any modifications—to any C or C++ project. This design ensures broad applicability and makes VMwhere a powerful, plug-and-play obfuscation solution for protecting intellectual property across diverse codebases.
