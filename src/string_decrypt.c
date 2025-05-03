@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 char* decrypt_string(char* encrypted, size_t len, uint8_t key) {
+    
     char* decrypted = (char*)malloc(len + 1);
     if (!decrypted) return NULL;
     

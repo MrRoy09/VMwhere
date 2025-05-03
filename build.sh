@@ -1,4 +1,16 @@
 #!/bin/bash
 
-clang -c src/start_main_hook.c -O0 -gdwarf
-clang -static main.o start_main_hook.o -Wl,--wrap=main -Wl,--wrap=printf -Wl,--wrap=__libc_start_main -o program -gdwarf
+echo "[+] Starting build"
+
+docker rmi -f bc360 2>/dev/null || true
+docker build -t bc360 .
+
+mkdir -p out
+
+docker create --name bc360_t bc360
+
+docker cp bc360_t:/build .
+
+docker rm bc360_t
+
+echo "[+] Build successful at ./build"
