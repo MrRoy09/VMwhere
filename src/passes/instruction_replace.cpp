@@ -26,6 +26,7 @@ namespace
         {
             std::vector<Instruction *> toReplace;
 
+            // Identify all integer addition instructions to replace
             for (auto &BB : F)
             {
                 for (auto &I : BB)
@@ -41,6 +42,7 @@ namespace
                 }
             }
 
+            // Replace additions with equivalent but more complex operations: (a+b) = (a^b) + ((a&b)<<1)
             for (Instruction *I : toReplace)
             {
                 IRBuilder<> builder(I);
@@ -59,6 +61,7 @@ namespace
     };
 }
 
+// Register the pass plugin with LLVM
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo
 llvmGetPassPluginInfo()
 {
