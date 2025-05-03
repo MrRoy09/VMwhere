@@ -2,3 +2,4 @@ test
 ./build
 ./hooks
 ./passes
+./out

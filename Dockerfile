@@ -18,7 +18,8 @@ COPY Makefile Makefile
 
 RUN make build
 
-ENTRYPOINT ["/bin/out"]
+FROM alpine:latest AS export
 
-FROM scratch AS export
-COPY --from=builder /app/build/out /out
+COPY --from=builder /app/build /build
+
+ENTRYPOINT ["/bin/ash"]
