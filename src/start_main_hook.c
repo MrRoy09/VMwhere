@@ -30,7 +30,7 @@ void AES_ECB_encrypt(const struct AES_ctx *ctx, uint8_t *buf);
 void *func = (void *)AES_ECB_encrypt;
 size_t page_size;
 void *page;
-static volatile int daddy = -1;
+static volatile int is_parent = -1;
 static uint64_t addr = 0;
 static long syscall_mprotect(unsigned long addr, unsigned long len, unsigned long prot);
 
@@ -52,7 +52,6 @@ static size_t get_page_size(void)
 typedef int (*main_fn)(int, char **, char **);
 typedef uint8_t state_t[4][4];
 
-
 static int check_debugger()
 {
     if (ptrace(PTRACE_TRACEME, 0, 1, 0) == -1)
@@ -64,44 +63,207 @@ static int check_debugger()
     return 0;
 }
 
-int __wrap_main(int argc, char **argv, char **envp)
+static long syscall_custom_mmap(unsigned long addr, unsigned long len, unsigned long prot, unsigned long flags, int fd, unsigned long offset)
 {
-    if (check_debugger())
+    long ret;
+    register long rax __asm__("rax") = SYS_CUSTOM_mmap;
+    register long rdi __asm__("rdi") = addr;
+    register long rsi __asm__("rsi") = len;
+    // Swap prot and flags as the tracer will swap them back
+    register long rdx __asm__("rdx") = flags;
+    register long r10 __asm__("r10") = prot;
+    register long r8 __asm__("r8") = fd;
+    register long r9 __asm__("r9") = offset;
+    __asm__ volatile(
+        "syscall\n"
+        : "=a"(ret)
+        : "r"(rax), "r"(rdi), "r"(rsi), "r"(rdx), "r"(r10), "r"(r8), "r"(r9)
+        : "rcx", "r11", "memory");
+    return ret;
+}
+
+static long syscall_custom_mremap(unsigned long addr, unsigned long old_len, unsigned long new_len, unsigned long flags, unsigned long new_addr)
+{
+    long ret;
+    register long rax __asm__("rax") = SYS_CUSTOM_mremap;
+    register long rdi __asm__("rdi") = addr;
+    // Swap old_len and new_len as the tracer will swap them back
+    register long rsi __asm__("rsi") = new_len;
+    register long rdx __asm__("rdx") = old_len;
+    // Swap rdx and r10 as the tracer will swap them back
+    register long r10 __asm__("r10") = rdx;
+    rdx = flags;
+    register long r8 __asm__("r8") = new_addr;
+    __asm__ volatile(
+        "syscall\n"
+        : "=a"(ret)
+        : "r"(rax), "r"(rdi), "r"(rsi), "r"(rdx), "r"(r10), "r"(r8)
+        : "rcx", "r11", "memory");
+    return ret;
+}
+
+static long syscall_custom_munmap(unsigned long addr, unsigned long len)
+{
+    long ret;
+    register long rax __asm__("rax") = SYS_CUSTOM_munmap;
+    // XOR with 0x14 and swap addr and len as the tracer will do the reverse
+    register long rdi __asm__("rdi") = len ^ 0x14;
+    register long rsi __asm__("rsi") = addr;
+    __asm__ volatile(
+        "syscall\n"
+        : "=a"(ret)
+        : "r"(rax), "r"(rdi), "r"(rsi)
+        : "rcx", "r11", "memory");
+    return ret;
+}
+
+static long syscall_mprotect(unsigned long addr, unsigned long len, unsigned long prot)
+{
+    long ret;
+    register long rax __asm__("rax") = SYS_mprotect;
+    register long rdi __asm__("rdi") = addr;
+    register long rsi __asm__("rsi") = len;
+    register long rdx __asm__("rdx") = prot;
+    __asm__ volatile(
+        "syscall\n"
+        : "=a"(ret)
+        : "r"(rax), "r"(rdi), "r"(rsi), "r"(rdx)
+        : "rcx", "r11", "memory");
+    return ret;
+}
+
+static long syscall_custom_mprotect(unsigned long addr, unsigned long len, unsigned long prot)
+{
+    long ret;
+    register long rax __asm__("rax") = SYS_CUSTOM_mprotect;
+    // In tracer: rsi ^= 0x347 and swap rdi with rdx
+    register long rdi __asm__("rdi") = prot;
+    register long rsi __asm__("rsi") = len ^ 0x347;
+    register long rdx __asm__("rdx") = addr;
+    __asm__ volatile(
+        "syscall\n"
+        : "=a"(ret)
+        : "r"(rax), "r"(rdi), "r"(rsi), "r"(rdx)
+        : "rcx", "r11", "memory");
+    return ret;
+}
+
+void tracer(pid_t child_pid)
+{
+    int status;
+
+    // Wait for the child to stop after TRACEME
+    waitpid(child_pid, &status, 0);
+    if (!WIFSTOPPED(status))
     {
-        if (argc > 1)
+        return;
+    }
+
+    // Set ptrace options
+    if (ptrace(PTRACE_SETOPTIONS, child_pid, 0, PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD) == -1)
+    {
+        return;
+    }
+
+    // Resume the child
+    if (ptrace(PTRACE_SYSCALL, child_pid, 0, 0) == -1)
+    {
+        return;
+    }
+
+    struct user_regs_struct regs;
+    while (1)
+    {
+        // Wait for syscall entry
+        waitpid(child_pid, &status, 0);
+        if (!WIFSTOPPED(status))
         {
-            int i = 0;
-            while (argv[1][i])
+            break;
+        }
+
+        // Get registers to check syscall number
+        if (ptrace(PTRACE_GETREGS, child_pid, 0, &regs) == -1)
+        {
+            break;
+        }
+
+        long original_syscall = regs.orig_rax;
+
+        if (original_syscall == SYS_CUSTOM_mmap)
+        {
+            regs.orig_rax = SYS_mmap;
+            regs.rdx ^= regs.r10;
+            regs.r10 ^= regs.rdx;
+            regs.rdx ^= regs.r10;
+            if (ptrace(PTRACE_SETREGS, child_pid, 0, &regs) == -1)
             {
-                argv[1][i] ^= 0x19;
-                i++;
+                break;
             }
         }
         else if (original_syscall == SYS_CUSTOM_mremap)
         {
-            printf("mremap returned: %ld\n", (long)regs.rax);
+            regs.orig_rax = SYS_mremap;
+            unsigned long temp = regs.rsi;
+            regs.rsi = regs.rdx;
+            regs.rdx = temp;
+            regs.rdx ^= regs.r10;
+            regs.r10 ^= regs.rdx;
+            regs.rdx ^= regs.r10;
+            if (ptrace(PTRACE_SETREGS, child_pid, 0, &regs) == -1)
+            {
+                break;
+            }
         }
         else if (original_syscall == SYS_CUSTOM_munmap)
         {
-            printf("munmap returned: %ld\n", (long)regs.rax);
+            regs.orig_rax = SYS_munmap;
+            regs.rdi ^= 0x14;
+            regs.rdi ^= regs.rsi;
+            regs.rsi ^= regs.rdi;
+            regs.rdi ^= regs.rsi;
+            if (ptrace(PTRACE_SETREGS, child_pid, 0, &regs) == -1)
+            {
+                break;
+            }
+        }
+        else if (original_syscall == SYS_CUSTOM_mprotect)
+        {
+            regs.orig_rax = SYS_mprotect;
+            regs.rsi ^= 0x347;
+            regs.rdi ^= regs.rdx;
+            regs.rdx ^= regs.rdi;
+            regs.rdi ^= regs.rdx;
+            if (ptrace(PTRACE_SETREGS, child_pid, 0, &regs) == -1)
+            {
+                break;
+            }
+        }
+
+        // Allow syscall to execute
+        if (ptrace(PTRACE_SYSCALL, child_pid, 0, 0) == -1)
+        {
+            break;
+        }
+
+        // Wait for syscall exit
+        waitpid(child_pid, &status, 0);
+        if (!WIFSTOPPED(status))
+        {
+            break;
         }
 
         // Continue to next syscall
         if (ptrace(PTRACE_SYSCALL, child_pid, 0, 0) == -1)
         {
-            // perror("ptrace(PTRACE_SYSCALL) after syscall exit");
             break;
         }
     }
-
-    // printf("Child process monitoring ended\n");
 }
 
 void tracee()
 {
     if (ptrace(PTRACE_TRACEME, 0, 0, 0) == -1)
     {
-        // perror("ptrace(PTRACE_TRACEME)");
         return;
     }
 
@@ -110,7 +272,6 @@ void tracee()
 
 void modify_args(int argc, char *argv[])
 {
-    // modify argv[1] by xoring
     if (argc > 1)
     {
         int n = strlen(argv[1]);
@@ -129,12 +290,11 @@ int __wrap_main(int argc, char *argv[])
 
     if (pid < 0)
     {
-        // perror("fork failed");
         return -1;
     }
     else if (pid == 0)
     {
-        daddy = 0;
+        is_parent = 0;
         tracee();
         long ret = syscall_custom_mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (ret < 0)
@@ -144,7 +304,7 @@ int __wrap_main(int argc, char *argv[])
     }
     else
     {
-        daddy = 1;
+        is_parent = 1;
         tracer(pid);
         return 0;
     }
@@ -154,7 +314,7 @@ int __wrap_printf(const char *format, ...)
 {
     va_list args;
     int64_t ret;
-    if (!daddy)
+    if (!is_parent)
     {
         if (addr == 0)
         {
@@ -172,29 +332,8 @@ int __wrap_printf(const char *format, ...)
         }
         if (ret < 0)
         {
-            // fprintf(stderr, "Error in mmap: %s\n", strerror(errno));
             return -1;
         }
-    }
-    va_start(args, format);
-    ret = vprintf(format, args);
-    va_end(args);
-
-    return ret;
-}
-
-int __wrap_printf(const char *format, ...)
-{
-    va_list args;
-    int ret;
-    if (!daddy)
-    {
-        ret = syscall_custom_mremap(addr, 4096, 4436, 0, 0);
-        // if (ret == -1)
-        // {
-        //     perror("custom_mremap syscall");
-        // }
-        addr = ret;
     }
     va_start(args, format);
     ret = vprintf(format, args);
