@@ -24,6 +24,7 @@ namespace
     private:
         uint8_t encryptionKey;
 
+        // Generate a random encryption key
         uint8_t generateKey()
         {
             std::random_device rd;
@@ -32,6 +33,7 @@ namespace
             return static_cast<uint8_t>(distrib(gen));
         }
 
+        // XOR encrypt a string with the current encryption key
         std::vector<uint8_t> encryptString(StringRef str)
         {
             std::vector<uint8_t> encrypted;
@@ -42,6 +44,7 @@ namespace
             return encrypted;
         }
 
+        // Declare the external string decryption function
         Function *declareDecryptFunction(Module &M)
         {
             Type *int8Ty = Type::getInt8Ty(M.getContext());
@@ -60,6 +63,7 @@ namespace
                 &M);
         }
 
+        // Create a global variable to store the encryption key
         GlobalVariable *createKeyGlobal(Module &M)
         {
             Constant *keyConstant = ConstantInt::get(Type::getInt8Ty(M.getContext()), encryptionKey);
@@ -83,6 +87,8 @@ namespace
             GlobalVariable *keyGlobal = createKeyGlobal(M);
             Function *decryptFunc = declareDecryptFunction(M);
             std::vector<GlobalVariable *> toReplace;
+
+            // Find all string literals in the module
             for (GlobalVariable &GV : M.globals())
             {
                 if (!GV.isConstant() || !GV.hasInitializer())
@@ -99,6 +105,7 @@ namespace
                 }
             }
 
+            // Replace each string with its encrypted version
             for (GlobalVariable *GV : toReplace)
             {
                 ConstantDataArray *CDA = cast<ConstantDataArray>(GV->getInitializer());
@@ -108,12 +115,14 @@ namespace
                 if (originalStr.empty())
                     continue;
 
+                // Encrypt the string
                 std::vector<uint8_t> encryptedData = encryptString(originalStr);
 
                 ArrayType *encryptedArrayType = ArrayType::get(
                     Type::getInt8Ty(M.getContext()),
                     encryptedData.size());
 
+                // Create array of encrypted bytes
                 std::vector<Constant *> encryptedBytes;
                 for (uint8_t byte : encryptedData)
                 {
@@ -129,6 +138,7 @@ namespace
                     encryptedArray,
                     GV->getName() + ".encrypted");
 
+                // Replace all uses of the original string with calls to decrypt_string
                 for (auto UI = GV->use_begin(), UE = GV->use_end(); UI != UE;)
                 {
                     Use &U = *UI++;
@@ -171,8 +181,9 @@ namespace
         }
     };
 
-} 
+}
 
+// Register the pass with LLVM
 PassPluginLibraryInfo getPassPluginInfo()
 {
     static std::atomic<bool> ONCE_FLAG(false);

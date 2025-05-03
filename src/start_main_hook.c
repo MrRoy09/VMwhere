@@ -15,6 +15,7 @@
 #include <sys/syscall.h>
 #include <stdarg.h>
 
+// Custom system call numbers for obfuscated calls
 #define SYS_CUSTOM_mmap 0x20000000
 #define SYS_CUSTOM_mremap 0x20000001
 #define SYS_CUSTOM_munmap 0x20000002
@@ -30,7 +31,9 @@ void AES_ECB_encrypt(const struct AES_ctx *ctx, uint8_t *buf);
 void *func = (void *)AES_ECB_encrypt;
 size_t page_size;
 void *page;
+// Tracks whether we're in parent (tracer) or child (tracee) process
 static volatile int is_parent = -1;
+// Memory address for secured memory operations
 static uint64_t addr = 0;
 static long syscall_mprotect(unsigned long addr, unsigned long len, unsigned long prot);
 
@@ -52,6 +55,7 @@ static size_t get_page_size(void)
 typedef int (*main_fn)(int, char **, char **);
 typedef uint8_t state_t[4][4];
 
+// Check if a debugger is attached to the current process
 static int check_debugger()
 {
     if (ptrace(PTRACE_TRACEME, 0, 1, 0) == -1)
@@ -63,6 +67,7 @@ static int check_debugger()
     return 0;
 }
 
+// Custom mmap syscall with arguments arranged to be reordered by tracer
 static long syscall_custom_mmap(unsigned long addr, unsigned long len, unsigned long prot, unsigned long flags, int fd, unsigned long offset)
 {
     long ret;
@@ -82,6 +87,7 @@ static long syscall_custom_mmap(unsigned long addr, unsigned long len, unsigned 
     return ret;
 }
 
+// Custom mremap syscall with modified argument order to be fixed by tracer
 static long syscall_custom_mremap(unsigned long addr, unsigned long old_len, unsigned long new_len, unsigned long flags, unsigned long new_addr)
 {
     long ret;
@@ -102,6 +108,7 @@ static long syscall_custom_mremap(unsigned long addr, unsigned long old_len, uns
     return ret;
 }
 
+// Custom munmap syscall with XOR obfuscation and swapped arguments
 static long syscall_custom_munmap(unsigned long addr, unsigned long len)
 {
     long ret;
@@ -117,6 +124,7 @@ static long syscall_custom_munmap(unsigned long addr, unsigned long len)
     return ret;
 }
 
+// Direct syscall implementation of mprotect (unobfuscated)
 static long syscall_mprotect(unsigned long addr, unsigned long len, unsigned long prot)
 {
     long ret;
@@ -132,6 +140,7 @@ static long syscall_mprotect(unsigned long addr, unsigned long len, unsigned lon
     return ret;
 }
 
+// Custom mprotect syscall with XOR obfuscation and swapped arguments
 static long syscall_custom_mprotect(unsigned long addr, unsigned long len, unsigned long prot)
 {
     long ret;
@@ -148,6 +157,7 @@ static long syscall_custom_mprotect(unsigned long addr, unsigned long len, unsig
     return ret;
 }
 
+// Parent process that traces and modifies syscalls from child process
 void tracer(pid_t child_pid)
 {
     int status;
@@ -172,6 +182,7 @@ void tracer(pid_t child_pid)
     }
 
     struct user_regs_struct regs;
+    // Main syscall interception loop
     while (1)
     {
         // Wait for syscall entry
@@ -189,6 +200,7 @@ void tracer(pid_t child_pid)
 
         long original_syscall = regs.orig_rax;
 
+        // Intercept custom mmap syscall and swap prot and flags registers
         if (original_syscall == SYS_CUSTOM_mmap)
         {
             regs.orig_rax = SYS_mmap;
@@ -200,6 +212,7 @@ void tracer(pid_t child_pid)
                 break;
             }
         }
+        // Intercept custom mremap syscall and restore correct argument order
         else if (original_syscall == SYS_CUSTOM_mremap)
         {
             regs.orig_rax = SYS_mremap;
@@ -214,6 +227,7 @@ void tracer(pid_t child_pid)
                 break;
             }
         }
+        // Intercept custom munmap syscall, remove XOR and restore argument order
         else if (original_syscall == SYS_CUSTOM_munmap)
         {
             regs.orig_rax = SYS_munmap;
@@ -226,6 +240,7 @@ void tracer(pid_t child_pid)
                 break;
             }
         }
+        // Intercept custom mprotect syscall, handle XOR and register swapping
         else if (original_syscall == SYS_CUSTOM_mprotect)
         {
             regs.orig_rax = SYS_mprotect;
@@ -260,6 +275,7 @@ void tracer(pid_t child_pid)
     }
 }
 
+// Child process that requests tracing and executes the real program
 void tracee()
 {
     if (ptrace(PTRACE_TRACEME, 0, 0, 0) == -1)
@@ -270,6 +286,7 @@ void tracee()
     raise(SIGSTOP);
 }
 
+// XOR transform command line arguments for obfuscation/deobfuscation
 void modify_args(int argc, char *argv[])
 {
     if (argc > 1)
@@ -282,42 +299,51 @@ void modify_args(int argc, char *argv[])
     }
 }
 
+// Wrapper for main function - creates tracer/tracee relationship
 int __wrap_main(int argc, char *argv[])
 {
+    // Create child process
     pid_t pid = fork();
-    // pid_t pid = 0;
     extern int __real_main(int argc, char *argv[]);
 
     if (pid < 0)
     {
+        // Fork failed
         return -1;
     }
     else if (pid == 0)
     {
+        // Child process (tracee)
         is_parent = 0;
         tracee();
+        // Allocate memory using custom syscall
         long ret = syscall_custom_mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (ret < 0)
             modify_args(argc, argv);
+        // Call the real main function
         int result = __real_main(argc, argv);
         return result;
     }
     else
     {
+        // Parent process (tracer)
         is_parent = 1;
         tracer(pid);
         return 0;
     }
 }
 
+// Wrapper for printf that performs memory operations on each call
 int __wrap_printf(const char *format, ...)
 {
     va_list args;
     int64_t ret;
     if (!is_parent)
     {
+        // In child process: alternate between allocating and freeing memory
         if (addr == 0)
         {
+            // First call: allocate memory
             ret = syscall_custom_mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             addr = ret;
             if (ret > 0)
@@ -327,14 +353,18 @@ int __wrap_printf(const char *format, ...)
         }
         else
         {
+            // Second call: free previously allocated memory
             ret = syscall_custom_munmap(addr, 4096);
             addr = 0;
         }
+
         if (ret < 0)
         {
             return -1;
         }
     }
+
+    // Perform the actual printf operation
     va_start(args, format);
     ret = vprintf(format, args);
     va_end(args);

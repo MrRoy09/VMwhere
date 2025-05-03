@@ -23,6 +23,7 @@ namespace
       return PreservedAnalyses::none();
     }
 
+    // Check if instruction is a conditional branch
     bool checkIsConditional(Instruction *i)
     {
       if (BranchInst *ir = dyn_cast<BranchInst>(i))
@@ -32,6 +33,7 @@ namespace
       return 0;
     }
 
+    // Flatten the control flow of a function to make it harder to understand
     bool flattenFunction(Function &F)
     {
       std::vector<BasicBlock *> target_conditionals;
@@ -48,6 +50,7 @@ namespace
 
       BasicBlock &entry_block = F.getEntryBlock();
 
+      // Find all conditional branches for flattening
       for (auto *bb : BasicBlocks)
       {
         if (checkIsConditional(bb->getTerminator()))
@@ -58,6 +61,7 @@ namespace
 
       if (target_conditionals.size() != 0)
       {
+        // Process each conditional block in reverse order to avoid invalidating iterators
         for (auto i = target_conditionals.rbegin(); i != target_conditionals.rend(); i++)
         {
           flatten_conditional(*i, F);
@@ -66,6 +70,7 @@ namespace
       return 1;
     }
 
+    // Transform a conditional branch into a switch-based state machine
     bool flatten_conditional(BasicBlock *conditionalBlock, Function &F)
     {
       BasicBlock *temp = conditionalBlock->splitBasicBlockBefore(conditionalBlock->getTerminator());
@@ -73,26 +78,31 @@ namespace
       ICmpInst *condition = dyn_cast<ICmpInst>(branchInstruction->getCondition()); 
       Instruction *firstInst = conditionalBlock->getFirstNonPHI();
 
+      // Create a switch variable to control flow
       AllocaInst *switchVar = NULL;
       LoadInst *load = NULL;
       switchVar = new AllocaInst(Type::getInt32Ty(F.getContext()), 0, "switchVar", firstInst);
       new StoreInst(ConstantInt::get(Type::getInt32Ty(F.getContext()), 1), switchVar, firstInst);
       load = new LoadInst(IntegerType::getInt32Ty(F.getContext()), switchVar, "switchVar", firstInst);
 
+      // Replace the original branch with a comparison of switch variable
       Value *cmp = new ICmpInst(branchInstruction, ICmpInst::ICMP_EQ, load, ConstantInt::get(Type::getInt32Ty(F.getContext()), 0), "cmp");
       BasicBlock *trueBlock = branchInstruction->getSuccessor(0);
       BasicBlock *falseBlock = branchInstruction->getSuccessor(1);
       BranchInst::Create(falseBlock, trueBlock, cmp, branchInstruction);
       branchInstruction->removeFromParent();
 
+      // Create the switch-based control flow mechanism
       BasicBlock *switch_case_3 = trueBlock;
       new StoreInst(ConstantInt::get(Type::getInt32Ty(F.getContext()), 2), switchVar, trueBlock->getTerminator());
       BasicBlock *switch_block = BasicBlock::Create(F.getContext(), "switch_statement", &F);
       dyn_cast<BranchInst>(conditionalBlock->getTerminator())->setSuccessor(1, switch_block);
       SwitchInst *switchI = SwitchInst::Create(load, falseBlock, 2, switch_block);
 
+      // Split the block for injecting the switch logic
       BasicBlock *newconditionalBlock = conditionalBlock->splitBasicBlockBefore(load);
 
+      // Update predecessors to point to the new control structure
       for (auto *pred : predecessors(newconditionalBlock))
       {
         if (pred != (*predecessors(newconditionalBlock).begin()))
@@ -108,6 +118,7 @@ namespace
         }
       }
 
+      // Create additional switch cases to obfuscate the control flow
       BasicBlock *switch_case_1 = BasicBlock::Create(F.getContext(), "case_1", &F);
       new StoreInst(ConstantInt::get(F.getContext(), APInt(32, 2)), switchVar, switch_case_1);
       BranchInst::Create(conditionalBlock, switch_case_1);
@@ -131,6 +142,7 @@ namespace
   };
 }
 
+// Register the pass with LLVM
 PassPluginLibraryInfo getPassPluginInfo()
 {
   static std::atomic<bool> ONCE_FLAG(false);
