@@ -40,7 +40,6 @@ namespace
             {
                 encrypted.push_back(static_cast<uint8_t>(c) ^ encryptionKey);
             }
-            encrypted.push_back(0 ^ encryptionKey); 
             return encrypted;
         }
 
@@ -105,6 +104,7 @@ namespace
             {
                 ConstantDataArray *CDA = cast<ConstantDataArray>(GV->getInitializer());
                 StringRef originalStr = CDA->getAsCString();
+                outs()<<"Encrypting string"<<GV->getName()<<"\n";
 
                 if (originalStr.empty())
                     continue;
