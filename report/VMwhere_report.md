@@ -159,7 +159,7 @@ static long syscall_custom_mmap(unsigned long addr, unsigned long len, unsigned 
 
 Note how these syscalls:
 1. Use non-standard syscall numbers (0x20000000 range)
-2. Intentionally swap or XOR arguments (like swapping `prot` and `flags` in mmap)
+2. Intentionally swap or XOR arguments (like swapp/ versatile build system for building entire engine without docker (dependencies must be locally installed)ing `prot` and `flags` in mmap)
 3. Would fail if called directly in the kernel
 
 ### Parent-Child Process with ptrace Monitoring
@@ -211,7 +211,7 @@ void tracer(pid_t child_pid) {
         
         // Update registers with corrected values
         ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
-    }
+    }/ versatile build system for building entire engine without docker (dependencies must be locally installed)
     // ... similar handling for other custom syscalls
 }
 ```
@@ -224,7 +224,7 @@ This technique makes the program difficult to debug for several reasons:
 
 ```c
 static int check_debugger() {
-    if (ptrace(PTRACE_TRACEME, 0, 1, 0) == -1) {
+    if (ptrace(PTRACE_TRACEME, 0, 1, 0) == -1) {/ versatile build system for building entire engine without docker (dependencies must be locally installed)
         return 1;  // Debugger detected
     }
     ptrace(PTRACE_DETACH, 0, 1, 0);
@@ -308,6 +308,9 @@ int __wrap_printf(const char *format, ...) {
 }
 ```
 
+### Stripping symbols
+Finally the generated binaries is stripped using `llvm-strip`. This ensures symbols are no longer visible and attackers cannot figure reverse functions based on associated symbol name. It also reduces the size of the binary.
+
 ## Effect of obfuscation on given binary
 
 Let us examine the effect of implementing each pass on the given AES source code to better understand what each obfuscation pass is doing (individually)
@@ -323,7 +326,7 @@ Obfuscated
 ![Obfuscated Compute GF function](instruction_obfuscated.png)
 
 ### Control Flow Flattening
-Original Control flow graph of main function
+Original Control flow graph of main function/ versatile build system for building entire engine without docker (dependencies must be locally installed)
 ![Unobfuscated main cfg](main_cfg.png)
 
 Obfuscated control flow graph of main function
@@ -347,4 +350,141 @@ Debugged Run
 ## Summary of Changes
 In conclusion, VMwhere engine operates on the IR level at compile time and function wrapping at link time. Hence **no source code modifications** are required whatsoever. 
 
-The obfuscation techniques implemented in VMwhere are both versatile and generic. They are not tailored to any specific source code (like given source code) and can be seamlessly applied—without requiring any modifications—to any C or C++ project. This design ensures broad applicability and makes VMwhere a powerful, plug-and-play obfuscation solution for protecting intellectual property across diverse codebases.
+The obfuscation techniques implemented in VMwhere are both versatile and generic. They are not tailored to any specific source code (like given source code) and can be seamlessly applied—without requiring any modifications—to any C or C++ project. This design/ versatile build system for building entire engine without docker (dependencies must be locally installed) ensures broad applicability and makes VMwhere a powerful, plug-and-play obfuscation solution for protecting intellectual property across diverse codebases.
+
+## Build
+
+### Directory Structure:
+```text
+├── bench.sh
+├── build.sh
+├── compare.sh 
+├── Dockerfile  
+├── Makefile
+├── src
+│   ├── hooks
+│   │   └── start_main_hook.c
+│   ├── passes
+│   │   ├── anti-disassembly.cpp
+│   │   ├── flatten.cpp
+│   │   ├── instruction_replace.cpp
+│   │   └── obfuscate_strings.cpp
+│   └── string_decrypt.c
+└── test
+    └── main.c
+```
+
+`bench.sh` is our bash script for benchmarking performance
+
+`build.sh` is our bash script that runs out of the box to build docker image and build the binary inside the docker image. The easiest way to build the VMwhere engine is to run this `./build.sh`
+
+`compare.sh` is our bash script to compare output of original and obfuscated binary
+
+`Dockerfile` is the Dockerfile to install all dependencies and libraries used
+
+`Makefile` is a versatile build system to build all obfuscation passes and obfuscated binary locally (Assumes that dependencies are installed)
+
+`src` contains all the source code for the passes and hooks.
+
+`test` contains given `main.c` source code
+
+## Building a pass
+
+**Below are commands used to build and implement LLVM pass. They are mentioned just for completeness sake. It is not required to execute these commands to build the engine**
+
+To build an LLVM pass we use
+
+`clang++ -fPIC -shared ./pass_name.cpp -o ./pass_name.so`
+
+To statically compile a binary `main.c` with the pass applied we use
+
+`clang -static -fpass-plugin=./pass_name.so main.c -o main`
+
+
+## Building the engine and producing the obfuscated binary
+The simplest way to build the engine is to ensure docker is running and use 
+`./build.sh`
+
+This will create the docker container, install the required dependencies, compile the passes and produce both original binary and obfuscated binary. 
+
+**Both the binaries will be available locally in `./build` folder**
+
+**Hence you only need to run `./build.sh` and then both original and obfuscated binary will be available to you in ./build folder to be used and tested**
+
+### Building(dockerfile):
+
+The provided Dockerfile uses a **multi-stage build** to efficiently compile and package the VMwhere project:
+
+- **Base Image:**  
+  The build starts from `debian:trixie` as the builder image, providing a stable Debian environment.
+
+- **Environment Setup:**  
+  `DEBIAN_FRONTEND=noninteractive` disables interactive prompts during package installation for automation.
+
+- **Package Installation:**  
+  Installs all necessary build tools and dependencies:
+  - `clang`, `llvm`, `llvm-dev`: Required for compiling and linking LLVM-based passes and C/C++ code.
+  - `build-essential`: Provides GCC, make, and other essential build utilities.
+  - Cleans up package lists to reduce image size.
+
+- **Source Copy:**  
+  Sets the working directory to `/app` and copies the source code (`src`), test files (`test`), and the `Makefile` into the container.
+
+- **Build Step:**  
+  Runs `make build` to compile the project using the provided Makefile. This builds all passes, hooks, and the main binaries, placing the results in `/app/build`.
+
+- **Export Stage:**  
+  Switches to a minimal `alpine:latest` image for the final stage, ensuring a small and secure runtime environment.
+
+- **Artifact Copy:**  
+  Copies the compiled `/app/build` directory from the builder stage into `/build` in the final image. This ensures only the build artifacts are present, not the build tools or sources.
+
+- **Entrypoint:**  
+  Sets the entrypoint to `/bin/ash` (Alpine shell), allowing for interactive use or further scripting.
+
+**Why multi-stage?**  
+Multi-stage builds keep the final image minimal by separating the build environment (with compilers and dependencies) from the runtime environment (with only the compiled binaries). This reduces image size, attack surface, and ensures a clean deployment.
+
+### Testing(benchmarking):
+
+For testing, we use `hyperfine`. We use a custom benchmarking script that automates hyperfine-based measurements across 1,000 random inputs (lengths 1–16). For each input the script runs both the original and the obfuscated binaries, collects mean execution times (after three warmup runs), and finally computes overall average latencies and a slowdown factor.
+
+**bench.sh** is made for this.
+
+- Ensures `hyperfine` is installed via the system package manager (supports Debian/Ubuntu and Arch).  
+- Generates `$NUM_TESTS` random alphanumeric inputs of length up to 16.  
+- For each input, runs both `./build/original` and `./build/obfuscated` with three warmup and three measured runs, exporting JSON results.  
+- Uses `jq` to extract mean runtimes, accumulates totals with `bc`, then computes the final average times and the slowdown factor.  
+- Prints progress every 100 tests and displays a summary of average original vs. obfuscated runtimes and the slowdown multiplier.  
+
+### Testing (comparison):
+
+To ensure functional equivalence between the original and obfuscated binaries, we use a simple shell script `compare.sh` that:
+
+**compare.sh** is made for this.
+
+- Generates `NUM_TESTS` random alphanumeric inputs (length 1–16)
+- Runs both `./build/original` and `./build/obfuscated` on each input
+- Compares their outputs and reports any mismatch
+- Prints a progress message every 100 successful tests
+
+
+### Testing (results):
+
+The tests were performed on `ROG Zephyrus G14 GA402NU` laptop with the following specs:
+1. OS: `Debian GNU/Linux trixie/sid x86_64`
+2. Kernel: `Linux 6.12.22-amd64`
+3. CPU: `AMD Ryzen 7 7735HS`
+4. RAM: `16 GB`
+
+
+Following results were obtained:
+
+![alt text](image.png)
+
+The tests were performed also on 
+
+![alt text](image-1.png)
+
+Followign results were obtained:
+![alt text](image-2.png)
