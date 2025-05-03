@@ -36,7 +36,7 @@ build: hooks
 	$(CC) -c $(addprefix -fpass-plugin=,$(PASS_OBJS)) $(SRC_DIR)/string_decrypt.c -o $(MAIN_DIR)/string_decrypt.o
 	$(CC) -c $(addprefix -fpass-plugin=,$(PASS_OBJS)) $(MAIN_DIR)/main.c -o $(MAIN_DIR)/main.o
 	$(CC) -static $(MAIN_DIR)/main.o $(HOOKS_DIR)/start_main_hook.o $(MAIN_DIR)/string_decrypt.o -Wl,--wrap=printf -Wl,--wrap=main -o $(BUILD_DIR)/obfuscated
-	# llvm-strip $(BUILD_DIR)/obfuscated
+	llvm-strip $(BUILD_DIR)/obfuscated
 	$(CC) -static $(MAIN_DIR)/main.c -o $(BUILD_DIR)/original
 
 clean:
