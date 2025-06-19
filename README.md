@@ -1,3 +1,2 @@
-## Usage
-1. add `main.c` to `test` 
-2. make build
+## Report
+Find a detailed report on the design of this obfuscation engine at `report/VMwhere_report.md` 
