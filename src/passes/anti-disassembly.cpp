@@ -1,4 +1,4 @@
-// anti-disassembly.cpp
+// anti-disassembly.cpp inspired from https://medium.com/swlh/assembly-wrapping-a-new-technique-for-anti-disassembly-c144eb90e036
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
