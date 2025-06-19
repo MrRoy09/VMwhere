@@ -87,6 +87,7 @@ A simple obfuscation pass that uses LLVM IR api to locate and replace all occure
 The source code for this pass can be found in `instruction_replace.cpp`
 
 ### Control Flow Flattening
+Based on http://ac.inf.elte.hu/Vol_030_2009/003.pdf
 
 This llvm based pass implements the control flow flattening algorithm. The basic idea is to encompass all the blocks as cases within a switch statement (or a switch like construct) and replicate the original control flow using a dispatch variable that controls which block will be executed next. This control variable can be modified at the end of each case to control the next case to be executed. 
 
@@ -95,6 +96,7 @@ I have also written a blog post on the algorithm and implementation over at http
 The source code for this can be found in `flatten.cpp`
 
 ### Anti-Disassembly
+Based on https://medium.com/swlh/assembly-wrapping-a-new-technique-for-anti-disassembly-c144eb90e036
 
 Special bytes are crafted and inserted into the binary. These bytes exploit a weakness in the recursive traversal algorithm employed by disassemblers to disassemble code. By encoding one x86 instruction within another, we can confuse the disassemblers into disassembling junk. Many variations of such bytes exist. VMwhere engine also randomizes each group of bytes slightly. This makes it harder for reverse engineers to patch the anti-disassembly bytes.
 
